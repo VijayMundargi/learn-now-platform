@@ -1,26 +1,31 @@
 
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
 
 const SignUp = () => {
+  const navigate = useNavigate();
+  const { signUp } = useAuth();
   const [formData, setFormData] = useState({
-    name: '',
+    fullName: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    role: 'student'
   });
-
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (formData.name.length < 2) {
-      newErrors.name = 'Name must be at least 2 characters';
+    if (formData.fullName.length < 2) {
+      newErrors.fullName = 'Name must be at least 2 characters';
     }
 
     if (!formData.email.includes('@')) {
@@ -39,11 +44,22 @@ const SignUp = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
-      console.log('Sign up attempt:', formData);
-      // Sign up logic would go here
+    if (!validateForm()) return;
+
+    setLoading(true);
+    
+    try {
+      await signUp(formData.email, formData.password, {
+        fullName: formData.fullName,
+        role: formData.role
+      });
+      navigate('/login');
+    } catch (error) {
+      console.error('Signup error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -53,13 +69,19 @@ const SignUp = () => {
       [e.target.name]: e.target.value
     });
     
-    // Clear error when user starts typing
     if (errors[e.target.name]) {
       setErrors({
         ...errors,
         [e.target.name]: ''
       });
     }
+  };
+
+  const handleRoleChange = (value: string) => {
+    setFormData({
+      ...formData,
+      role: value
+    });
   };
 
   return (
@@ -80,18 +102,18 @@ const SignUp = () => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-gray-700 font-medium">Full Name</Label>
+                <Label htmlFor="fullName" className="text-gray-700 font-medium">Full Name</Label>
                 <Input
-                  id="name"
-                  name="name"
+                  id="fullName"
+                  name="fullName"
                   type="text"
-                  value={formData.name}
+                  value={formData.fullName}
                   onChange={handleChange}
                   placeholder="Enter your full name"
-                  className={`h-12 border-gray-200 focus:border-purple-500 focus:ring-purple-500 ${errors.name ? 'border-red-500' : ''}`}
+                  className={`h-12 border-gray-200 focus:border-purple-500 focus:ring-purple-500 ${errors.fullName ? 'border-red-500' : ''}`}
                   required
                 />
-                {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
+                {errors.fullName && <p className="text-red-500 text-sm">{errors.fullName}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-gray-700 font-medium">Email</Label>
@@ -106,6 +128,18 @@ const SignUp = () => {
                   required
                 />
                 {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role" className="text-gray-700 font-medium">Account Type</Label>
+                <Select value={formData.role} onValueChange={handleRoleChange}>
+                  <SelectTrigger className="h-12 border-gray-200 focus:border-purple-500 focus:ring-purple-500">
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="teacher">Teacher</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-gray-700 font-medium">Password</Label>
@@ -137,9 +171,10 @@ const SignUp = () => {
               </div>
               <Button 
                 type="submit" 
+                disabled={loading}
                 className="w-full h-12 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold rounded-lg transition-all duration-300 hover:scale-105"
               >
-                Create Account
+                {loading ? 'Creating Account...' : 'Create Account'}
               </Button>
             </form>
             <div className="mt-6 text-center">
