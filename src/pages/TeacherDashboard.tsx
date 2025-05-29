@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -63,15 +62,15 @@ const TeacherDashboard = () => {
     try {
       const { data: coursesData } = await supabase
         .from('courses')
-        .select('is_published')
+        .select('id, is_published')
         .eq('instructor_id', user.id);
+
+      const courseIds = coursesData?.map(c => c.id) || [];
 
       const { data: enrollmentsData } = await supabase
         .from('enrollments')
         .select('id')
-        .in('course_id', 
-          coursesData?.map(c => c.id) || []
-        );
+        .in('course_id', courseIds);
 
       setStats({
         totalCourses: coursesData?.length || 0,
