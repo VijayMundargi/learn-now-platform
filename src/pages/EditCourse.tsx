@@ -1,6 +1,5 @@
-
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,8 +13,9 @@ import { toast } from '@/hooks/use-toast';
 import ImageUpload from '@/components/ImageUpload';
 import LessonManager from '@/components/LessonManager';
 
-const CreateCourse = () => {
+const EditCourse = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -43,18 +43,58 @@ const CreateCourse = () => {
     'Personal Development'
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
+  useEffect(() => {
+    if (id) {
+      fetchCourse();
+    }
+  }, [id]);
 
-    if (lessons.length === 0) {
+  const fetchCourse = async () => {
+    try {
+      const { data: course, error } = await supabase
+        .from('courses')
+        .select(`
+          *,
+          lessons(*)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error) throw error;
+
+      setFormData({
+        title: course.title,
+        description: course.description || '',
+        category: course.category || '',
+        price: course.price?.toString() || '0',
+        level: course.level,
+        what_you_will_learn: course.what_you_will_learn || [''],
+        requirements: course.requirements || [''],
+        thumbnail_url: course.thumbnail_url || ''
+      });
+
+      if (course.lessons) {
+        const sortedLessons = course.lessons
+          .sort((a: any, b: any) => a.order_index - b.order_index)
+          .map((lesson: any) => ({
+            ...lesson,
+            duration: Math.floor(lesson.duration / 60) // Convert seconds to minutes
+          }));
+        setLessons(sortedLessons);
+      }
+    } catch (error) {
+      console.error('Error fetching course:', error);
       toast({
         title: "Error",
-        description: "Please add at least one lesson to your course",
+        description: "Failed to fetch course details",
         variant: "destructive"
       });
-      return;
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !id) return;
 
     setLoading(true);
     
@@ -65,47 +105,55 @@ const CreateCourse = () => {
         category: formData.category,
         price: parseFloat(formData.price) || 0,
         level: formData.level,
-        instructor_id: user.id,
         what_you_will_learn: formData.what_you_will_learn.filter(item => item.trim() !== ''),
         requirements: formData.requirements.filter(item => item.trim() !== ''),
         thumbnail_url: formData.thumbnail_url,
-        is_published: false
+        updated_at: new Date().toISOString()
       };
 
-      const { data: course, error: courseError } = await supabase
+      const { error: courseError } = await supabase
         .from('courses')
-        .insert([courseData])
-        .select()
-        .single();
+        .update(courseData)
+        .eq('id', id);
 
       if (courseError) throw courseError;
 
-      // Insert lessons
-      const lessonsData = lessons.map(lesson => ({
-        course_id: course.id,
-        title: lesson.title,
-        video_url: lesson.video_url,
-        duration: lesson.duration * 60, // Convert minutes to seconds
-        order_index: lesson.order_index
-      }));
-
-      const { error: lessonsError } = await supabase
+      // Delete existing lessons and insert new ones
+      const { error: deleteError } = await supabase
         .from('lessons')
-        .insert(lessonsData);
+        .delete()
+        .eq('course_id', id);
 
-      if (lessonsError) throw lessonsError;
+      if (deleteError) throw deleteError;
+
+      // Insert updated lessons
+      if (lessons.length > 0) {
+        const lessonsData = lessons.map(lesson => ({
+          course_id: id,
+          title: lesson.title,
+          video_url: lesson.video_url,
+          duration: lesson.duration * 60, // Convert minutes to seconds
+          order_index: lesson.order_index
+        }));
+
+        const { error: lessonsError } = await supabase
+          .from('lessons')
+          .insert(lessonsData);
+
+        if (lessonsError) throw lessonsError;
+      }
 
       toast({
         title: "Success",
-        description: "Course created successfully!"
+        description: "Course updated successfully!"
       });
 
       navigate('/teacher/dashboard');
     } catch (error) {
-      console.error('Error creating course:', error);
+      console.error('Error updating course:', error);
       toast({
         title: "Error",
-        description: "Failed to create course",
+        description: "Failed to update course",
         variant: "destructive"
       });
     } finally {
@@ -151,7 +199,7 @@ const CreateCourse = () => {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Card className="bg-white shadow-lg border-0">
           <CardHeader>
-            <CardTitle className="text-2xl font-bold text-gray-800">Create New Course</CardTitle>
+            <CardTitle className="text-2xl font-bold text-gray-800">Edit Course</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -295,7 +343,7 @@ const CreateCourse = () => {
               <LessonManager
                 lessons={lessons}
                 onLessonsChange={setLessons}
-                courseId={user?.id}
+                courseId={id}
               />
 
               <div className="flex gap-4 pt-6">
@@ -304,7 +352,7 @@ const CreateCourse = () => {
                   disabled={loading}
                   className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
                 >
-                  {loading ? 'Creating...' : 'Create Course'}
+                  {loading ? 'Updating...' : 'Update Course'}
                 </Button>
                 <Button
                   type="button"
@@ -322,4 +370,4 @@ const CreateCourse = () => {
   );
 };
 
-export default CreateCourse;
+export default EditCourse;

@@ -13,6 +13,9 @@ import CourseDetail from "./pages/CourseDetail";
 import MyCourses from "./pages/MyCourses";
 import TeacherDashboard from "./pages/TeacherDashboard";
 import CreateCourse from "./pages/CreateCourse";
+import EditCourse from "./pages/EditCourse";
+import CourseViewer from "./pages/CourseViewer";
+import Certificate from "./pages/Certificate";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,8 +34,11 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/course/:id" element={<CourseDetail />} />
             <Route path="/my-courses" element={<MyCourses />} />
+            <Route path="/course-viewer/:id" element={<CourseViewer />} />
+            <Route path="/certificate/:courseId/:userId" element={<Certificate />} />
             <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
             <Route path="/teacher/create-course" element={<CreateCourse />} />
+            <Route path="/teacher/edit-course/:id" element={<EditCourse />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
