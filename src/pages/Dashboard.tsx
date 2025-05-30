@@ -25,23 +25,76 @@ const Dashboard = () => {
 
   const fetchCourses = async () => {
     try {
-      const { data, error } = await supabase
+      console.log('Fetching courses...');
+      
+      // First, get all published courses
+      const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
-        .select(`
-          *,
-          profiles!instructor_id(full_name),
-          enrollments(user_id)
-        `)
+        .select('*')
         .eq('is_published', true)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setCourses(data || []);
+      if (coursesError) {
+        console.error('Error fetching courses:', coursesError);
+        throw coursesError;
+      }
+
+      console.log('Courses fetched:', coursesData);
+
+      if (!coursesData || coursesData.length === 0) {
+        console.log('No published courses found');
+        setCourses([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get instructor profiles for each course
+      const instructorIds = [...new Set(coursesData.map(course => course.instructor_id))];
+      
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', instructorIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        // Continue without instructor names if profiles fetch fails
+      }
+
+      // Get enrollments for the current user
+      let enrollmentsData = [];
+      if (user) {
+        const { data: userEnrollments, error: enrollmentsError } = await supabase
+          .from('enrollments')
+          .select('course_id')
+          .eq('user_id', user.id);
+
+        if (enrollmentsError) {
+          console.error('Error fetching enrollments:', enrollmentsError);
+        } else {
+          enrollmentsData = userEnrollments || [];
+        }
+      }
+
+      // Combine the data
+      const coursesWithInstructors = coursesData.map(course => {
+        const instructor = profilesData?.find(profile => profile.id === course.instructor_id);
+        const isEnrolled = enrollmentsData.some(enrollment => enrollment.course_id === course.id);
+        
+        return {
+          ...course,
+          instructor_name: instructor?.full_name || 'Unknown Instructor',
+          is_enrolled: isEnrolled
+        };
+      });
+
+      console.log('Final courses data:', coursesWithInstructors);
+      setCourses(coursesWithInstructors);
     } catch (error) {
-      console.error('Error fetching courses:', error);
+      console.error('Error in fetchCourses:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch courses",
+        description: "Failed to fetch courses. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -52,13 +105,14 @@ const Dashboard = () => {
   const categories = [...new Set(courses.map(course => course.category).filter(Boolean))];
 
   const filteredCourses = courses.filter(course => {
-    const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = course.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         course.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         course.instructor_name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
     const matchesPrice = !selectedPrice || 
-                        (selectedPrice === 'under-2000' && course.price < 2000) ||
-                        (selectedPrice === '2000-3000' && course.price >= 2000 && course.price <= 3000) ||
-                        (selectedPrice === 'over-3000' && course.price > 3000);
+                        (selectedPrice === 'under-2000' && (course.price || 0) < 2000) ||
+                        (selectedPrice === '2000-3000' && (course.price || 0) >= 2000 && (course.price || 0) <= 3000) ||
+                        (selectedPrice === 'over-3000' && (course.price || 0) > 3000);
     
     return matchesSearch && matchesCategory && matchesPrice;
   });
@@ -70,17 +124,25 @@ const Dashboard = () => {
         description: "Please log in to enroll in courses",
         variant: "destructive"
       });
+      navigate('/login');
       return;
     }
 
     try {
+      console.log('Enrolling in course:', courseId);
+      
       // Check if already enrolled
-      const { data: existingEnrollment } = await supabase
+      const { data: existingEnrollment, error: checkError } = await supabase
         .from('enrollments')
         .select('id')
         .eq('user_id', user.id)
         .eq('course_id', courseId)
-        .single();
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking enrollment:', checkError);
+        throw checkError;
+      }
 
       if (existingEnrollment) {
         toast({
@@ -90,14 +152,17 @@ const Dashboard = () => {
         return;
       }
 
-      const { error } = await supabase
+      const { error: enrollError } = await supabase
         .from('enrollments')
         .insert({
           user_id: user.id,
           course_id: courseId
         });
 
-      if (error) throw error;
+      if (enrollError) {
+        console.error('Error enrolling:', enrollError);
+        throw enrollError;
+      }
 
       const course = courses.find(c => c.id === courseId);
       toast({
@@ -111,7 +176,7 @@ const Dashboard = () => {
       console.error('Error enrolling in course:', error);
       toast({
         title: "Error",
-        description: "Failed to enroll in course",
+        description: "Failed to enroll in course. Please try again.",
         variant: "destructive"
       });
     }
@@ -125,10 +190,6 @@ const Dashboard = () => {
     setSearchTerm('');
     setSelectedCategory('');
     setSelectedPrice('');
-  };
-
-  const isEnrolled = (course: any) => {
-    return course.enrollments?.some((enrollment: any) => enrollment.user_id === user?.id);
   };
 
   if (loading) {
@@ -231,14 +292,14 @@ const Dashboard = () => {
                   description: course.description || '',
                   price: course.price || 0,
                   category: course.category || 'General',
-                  instructor: course.profiles?.full_name || 'Unknown Instructor',
+                  instructor: course.instructor_name,
                   duration: '40 hours', // TODO: Calculate from lessons
                   level: course.level || 'Beginner',
                   image: course.thumbnail_url || "/placeholder.svg"
                 }}
                 onEnroll={() => handleEnroll(course.id)}
                 onViewDetails={() => handleViewDetails(course.id)}
-                isEnrolled={isEnrolled(course)}
+                isEnrolled={course.is_enrolled || false}
               />
             </div>
           ))}
@@ -247,8 +308,14 @@ const Dashboard = () => {
         {filteredCourses.length === 0 && (
           <div className="text-center py-12">
             <div className="text-6xl text-gray-300 mb-4">📚</div>
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">No courses found</h3>
-            <p className="text-gray-500">Try adjusting your search criteria or filters</p>
+            <h3 className="text-xl font-semibold text-gray-600 mb-2">
+              {courses.length === 0 ? 'No courses available' : 'No courses found'}
+            </h3>
+            <p className="text-gray-500">
+              {courses.length === 0 
+                ? 'No instructors have published courses yet. Check back later!' 
+                : 'Try adjusting your search criteria or filters'}
+            </p>
           </div>
         )}
       </div>
