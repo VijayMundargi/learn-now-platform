@@ -1,93 +1,59 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import CourseCard from '@/components/CourseCard';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-
-const mockCourses = [
-  {
-    id: 1,
-    title: "Complete React Development Bootcamp",
-    description: "Learn React from basics to advanced concepts with hands-on projects and real-world applications.",
-    price: 2999,
-    category: "Web Development",
-    instructor: "John Doe",
-    duration: "40 hours",
-    level: "Beginner",
-    image: "/placeholder.svg"
-  },
-  {
-    id: 2,
-    title: "Python for Data Science",
-    description: "Master Python programming for data analysis, visualization, and machine learning applications.",
-    price: 3499,
-    category: "Data Science",
-    instructor: "Jane Smith",
-    duration: "35 hours",
-    level: "Intermediate",
-    image: "/placeholder.svg"
-  },
-  {
-    id: 3,
-    title: "Digital Marketing Masterclass",
-    description: "Complete guide to digital marketing including SEO, social media, and content marketing strategies.",
-    price: 1999,
-    category: "Marketing",
-    instructor: "Mike Johnson",
-    duration: "25 hours",
-    level: "Beginner",
-    image: "/placeholder.svg"
-  },
-  {
-    id: 4,
-    title: "UI/UX Design Fundamentals",
-    description: "Learn user interface and user experience design principles with practical design projects.",
-    price: 2799,
-    category: "Design",
-    instructor: "Sarah Wilson",
-    duration: "30 hours",
-    level: "Beginner",
-    image: "/placeholder.svg"
-  },
-  {
-    id: 5,
-    title: "Advanced JavaScript & Node.js",
-    description: "Deep dive into JavaScript ES6+ features and build scalable backend applications with Node.js.",
-    price: 3999,
-    category: "Web Development",
-    instructor: "David Brown",
-    duration: "45 hours",
-    level: "Advanced",
-    image: "/placeholder.svg"
-  },
-  {
-    id: 6,
-    title: "Machine Learning with Python",
-    description: "Comprehensive course on machine learning algorithms and implementation using Python libraries.",
-    price: 4499,
-    category: "Data Science",
-    instructor: "Emily Davis",
-    duration: "50 hours",
-    level: "Advanced",
-    image: "/placeholder.svg"
-  }
-];
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedPrice, setSelectedPrice] = useState('');
 
-  const categories = [...new Set(mockCourses.map(course => course.category))];
+  useEffect(() => {
+    fetchCourses();
+  }, []);
 
-  const filteredCourses = mockCourses.filter(course => {
+  const fetchCourses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('courses')
+        .select(`
+          *,
+          profiles!instructor_id(full_name),
+          enrollments(user_id)
+        `)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCourses(data || []);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch courses",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const categories = [...new Set(courses.map(course => course.category).filter(Boolean))];
+
+  const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.description.toLowerCase().includes(searchTerm.toLowerCase());
+                         course.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || course.category === selectedCategory;
     const matchesPrice = !selectedPrice || 
                         (selectedPrice === 'under-2000' && course.price < 2000) ||
@@ -97,17 +63,61 @@ const Dashboard = () => {
     return matchesSearch && matchesCategory && matchesPrice;
   });
 
-  const handleEnroll = (courseId: number) => {
-    const course = mockCourses.find(c => c.id === courseId);
-    if (course) {
+  const handleEnroll = async (courseId: string) => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to enroll in courses",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Check if already enrolled
+      const { data: existingEnrollment } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('course_id', courseId)
+        .single();
+
+      if (existingEnrollment) {
+        toast({
+          title: "Already Enrolled",
+          description: "You are already enrolled in this course",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('enrollments')
+        .insert({
+          user_id: user.id,
+          course_id: courseId
+        });
+
+      if (error) throw error;
+
+      const course = courses.find(c => c.id === courseId);
       toast({
         title: "Enrollment Successful!",
-        description: `You have successfully enrolled in "${course.title}". A confirmation email has been sent.`,
+        description: `You have successfully enrolled in "${course?.title}". Start learning now!`,
+      });
+
+      // Refresh courses to update enrollment status
+      fetchCourses();
+    } catch (error) {
+      console.error('Error enrolling in course:', error);
+      toast({
+        title: "Error",
+        description: "Failed to enroll in course",
+        variant: "destructive"
       });
     }
   };
 
-  const handleViewDetails = (courseId: number) => {
+  const handleViewDetails = (courseId: string) => {
     navigate(`/course/${courseId}`);
   };
 
@@ -116,6 +126,21 @@ const Dashboard = () => {
     setSelectedCategory('');
     setSelectedPrice('');
   };
+
+  const isEnrolled = (course: any) => {
+    return course.enrollments?.some((enrollment: any) => enrollment.user_id === user?.id);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
+        <Navbar />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-xl">Loading courses...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
@@ -128,7 +153,7 @@ const Dashboard = () => {
             Learn Skills That Matter
           </h1>
           <p className="text-xl md:text-2xl mb-8 text-blue-100 animate-fade-in">
-            Discover thousands of courses and advance your career with expert-led training
+            Discover courses created by expert instructors and advance your career
           </p>
         </div>
       </div>
@@ -200,9 +225,20 @@ const Dashboard = () => {
               style={{ animationDelay: `${index * 100}ms` }}
             >
               <CourseCard
-                course={course}
-                onEnroll={handleEnroll}
-                onViewDetails={handleViewDetails}
+                course={{
+                  id: course.id,
+                  title: course.title,
+                  description: course.description || '',
+                  price: course.price || 0,
+                  category: course.category || 'General',
+                  instructor: course.profiles?.full_name || 'Unknown Instructor',
+                  duration: '40 hours', // TODO: Calculate from lessons
+                  level: course.level || 'Beginner',
+                  image: course.thumbnail_url || "/placeholder.svg"
+                }}
+                onEnroll={() => handleEnroll(course.id)}
+                onViewDetails={() => handleViewDetails(course.id)}
+                isEnrolled={isEnrolled(course)}
               />
             </div>
           ))}
