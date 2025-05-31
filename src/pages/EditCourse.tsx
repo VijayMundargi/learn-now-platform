@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import ImageUpload from '@/components/ImageUpload';
 import LessonManager from '@/components/LessonManager';
+import { Plus } from 'lucide-react';
 
 const EditCourse = () => {
   const navigate = useNavigate();
@@ -26,9 +27,12 @@ const EditCourse = () => {
     level: 'beginner',
     what_you_will_learn: [''],
     requirements: [''],
-    thumbnail_url: ''
+    thumbnail_url: '',
+    author_name: ''
   });
   const [lessons, setLessons] = useState<any[]>([]);
+  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
 
   const categories = [
     'Web Development',
@@ -70,8 +74,16 @@ const EditCourse = () => {
         level: course.level,
         what_you_will_learn: course.what_you_will_learn || [''],
         requirements: course.requirements || [''],
-        thumbnail_url: course.thumbnail_url || ''
+        thumbnail_url: course.thumbnail_url || '',
+        author_name: course.author_name || ''
       });
+
+      // Check if we should show custom category
+      if (course.category && !categories.includes(course.category)) {
+        setShowCustomCategory(true);
+        setCustomCategory(course.category);
+        setFormData(prev => ({...prev, category: ''}));
+      }
 
       if (course.lessons) {
         const sortedLessons = course.lessons
@@ -99,15 +111,28 @@ const EditCourse = () => {
     setLoading(true);
     
     try {
+      const finalCategory = showCustomCategory ? customCategory : formData.category;
+      
+      if (!finalCategory) {
+        toast({
+          title: "Error",
+          description: "Please select or create a category",
+          variant: "destructive"
+        });
+        setLoading(false);
+        return;
+      }
+
       const courseData = {
         title: formData.title,
         description: formData.description,
-        category: formData.category,
+        category: finalCategory,
         price: parseFloat(formData.price) || 0,
         level: formData.level,
         what_you_will_learn: formData.what_you_will_learn.filter(item => item.trim() !== ''),
         requirements: formData.requirements.filter(item => item.trim() !== ''),
         thumbnail_url: formData.thumbnail_url,
+        author_name: formData.author_name,
         updated_at: new Date().toISOString()
       };
 
@@ -217,19 +242,65 @@ const EditCourse = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select value={formData.category} onValueChange={(value) => setFormData({...formData, category: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map(category => (
-                        <SelectItem key={category} value={category}>
-                          {category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="author_name">Author Name</Label>
+                  <Input
+                    id="author_name"
+                    name="author_name"
+                    value={formData.author_name}
+                    onChange={handleChange}
+                    placeholder="Enter author name"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <div className="flex gap-2">
+                  {!showCustomCategory ? (
+                    <>
+                      <Select value={formData.category} onValueChange={(value) => setFormData({...formData, category: value})}>
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(category => (
+                            <SelectItem key={category} value={category}>
+                              {category}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowCustomCategory(true)}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Custom
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        placeholder="Enter custom category"
+                        className="flex-1"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setShowCustomCategory(false);
+                          setCustomCategory('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
 

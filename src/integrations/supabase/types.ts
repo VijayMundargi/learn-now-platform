@@ -43,6 +43,7 @@ export type Database = {
       }
       courses: {
         Row: {
+          author_name: string | null
           category: string | null
           created_at: string
           description: string | null
@@ -58,6 +59,7 @@ export type Database = {
           what_you_will_learn: string[] | null
         }
         Insert: {
+          author_name?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
@@ -73,6 +75,7 @@ export type Database = {
           what_you_will_learn?: string[] | null
         }
         Update: {
+          author_name?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
