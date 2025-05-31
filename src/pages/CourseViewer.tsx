@@ -81,6 +81,7 @@ const CourseViewer = () => {
         throw lessonsError;
       }
 
+      console.log('Lessons data:', lessonsData);
       setLessons(lessonsData || []);
       if (lessonsData && lessonsData.length > 0) {
         setCurrentLesson(lessonsData[0]);
@@ -159,8 +160,12 @@ const CourseViewer = () => {
       });
 
       // Check if all lessons are complete
-      const newCompletedCount = progress.length + 1;
-      if (newCompletedCount === lessons.length && !certificate) {
+      const newProgress = [...progress];
+      if (!newProgress.some(p => p.lesson_id === lessonId)) {
+        newProgress.push({ lesson_id: lessonId });
+      }
+      
+      if (newProgress.length === lessons.length && !certificate) {
         await generateCertificate();
       }
 
@@ -278,47 +283,66 @@ const CourseViewer = () => {
             <Card className="bg-white shadow-lg border-0">
               <CardContent className="p-0">
                 {currentLesson?.video_url ? (
-                  <video 
-                    src={currentLesson.video_url}
-                    controls
-                    className="w-full h-96 rounded-t-lg"
-                    key={currentLesson.id}
-                  />
+                  <div>
+                    <video 
+                      src={currentLesson.video_url}
+                      controls
+                      className="w-full h-96 rounded-t-lg"
+                      key={currentLesson.id}
+                      onError={(e) => {
+                        console.error('Video error:', e);
+                        console.log('Video URL:', currentLesson.video_url);
+                      }}
+                    />
+                    <div className="p-6">
+                      <h2 className="text-2xl font-bold mb-2">{currentLesson.title}</h2>
+                      <p className="text-gray-600 mb-4">
+                        Lesson {lessons.findIndex(l => l.id === currentLesson.id) + 1} of {lessons.length}
+                        {currentLesson.duration && ` • ${Math.floor(currentLesson.duration / 60)} minutes`}
+                      </p>
+                      <div className="flex gap-4">
+                        {!isLessonComplete(currentLesson.id) && (
+                          <Button 
+                            onClick={() => markLessonComplete(currentLesson.id)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Mark Complete
+                          </Button>
+                        )}
+                        {isLessonComplete(currentLesson.id) && (
+                          <Badge className="bg-green-100 text-green-700">
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Completed
+                          </Badge>
+                        )}
+                        {certificate && (
+                          <Button 
+                            onClick={() => navigate(`/certificate/${id}/${user?.id}`)}
+                            className="bg-purple-600 hover:bg-purple-700"
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            View Certificate
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="w-full h-96 bg-gray-200 rounded-t-lg flex items-center justify-center">
                     <div className="text-center">
                       <Play className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500">
-                        {currentLesson ? 'No video available for this lesson' : 'Select a lesson to start watching'}
+                        {currentLesson ? `No video available for "${currentLesson.title}"` : 'Select a lesson to start watching'}
                       </p>
+                      {currentLesson && (
+                        <p className="text-sm text-gray-400 mt-2">
+                          Video URL: {currentLesson.video_url || 'Not set'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
-                <div className="p-6">
-                  <h2 className="text-2xl font-bold mb-4">
-                    {currentLesson?.title || 'Select a lesson'}
-                  </h2>
-                  <div className="flex gap-4">
-                    {currentLesson && !isLessonComplete(currentLesson.id) && (
-                      <Button 
-                        onClick={() => markLessonComplete(currentLesson.id)}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Mark Complete
-                      </Button>
-                    )}
-                    {certificate && (
-                      <Button 
-                        onClick={() => window.open(certificate.certificate_url, '_blank')}
-                        className="bg-purple-600 hover:bg-purple-700"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download Certificate
-                      </Button>
-                    )}
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -375,6 +399,7 @@ const CourseViewer = () => {
                               <p className="text-xs text-gray-500">
                                 Lesson {index + 1}
                                 {lesson.duration && ` • ${Math.floor(lesson.duration / 60)} min`}
+                                {lesson.video_url && ` • Video available`}
                               </p>
                             </div>
                           </div>
