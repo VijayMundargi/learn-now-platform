@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-import { Play, CheckCircle, Download } from 'lucide-react';
+import { Play, CheckCircle, Download, ArrowLeft } from 'lucide-react';
 
 const CourseViewer = () => {
   const { id } = useParams();
@@ -30,49 +30,91 @@ const CourseViewer = () => {
 
   const fetchCourseData = async () => {
     try {
-      const { data: course, error: courseError } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          lessons(*),
-          enrollments(*)
-        `)
-        .eq('id', id)
-        .single();
-
-      if (courseError) throw courseError;
+      console.log('Fetching course data for ID:', id);
 
       // Check if user is enrolled
-      const isEnrolled = course.enrollments.some((e: any) => e.user_id === user?.id);
-      if (!isEnrolled) {
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('enrollments')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('course_id', id)
+        .maybeSingle();
+
+      if (enrollmentError) {
+        console.error('Error checking enrollment:', enrollmentError);
+        throw enrollmentError;
+      }
+
+      if (!enrollment) {
+        toast({
+          title: "Access Denied",
+          description: "You are not enrolled in this course",
+          variant: "destructive"
+        });
         navigate('/dashboard');
         return;
       }
 
-      setCourse(course);
-      
-      const sortedLessons = course.lessons.sort((a: any, b: any) => a.order_index - b.order_index);
-      setLessons(sortedLessons);
-      setCurrentLesson(sortedLessons[0]);
+      // Get course details
+      const { data: courseData, error: courseError } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (courseError) {
+        console.error('Error fetching course:', courseError);
+        throw courseError;
+      }
+
+      setCourse(courseData);
+
+      // Get lessons for this course
+      const { data: lessonsData, error: lessonsError } = await supabase
+        .from('lessons')
+        .select('*')
+        .eq('course_id', id)
+        .order('order_index', { ascending: true });
+
+      if (lessonsError) {
+        console.error('Error fetching lessons:', lessonsError);
+        throw lessonsError;
+      }
+
+      setLessons(lessonsData || []);
+      if (lessonsData && lessonsData.length > 0) {
+        setCurrentLesson(lessonsData[0]);
+      }
 
       // Fetch user progress
-      const { data: progressData } = await supabase
+      const lessonIds = lessonsData?.map(l => l.id) || [];
+      const { data: progressData, error: progressError } = await supabase
         .from('lesson_progress')
         .select('lesson_id')
         .eq('user_id', user?.id)
-        .in('lesson_id', sortedLessons.map((l: any) => l.id));
+        .in('lesson_id', lessonIds);
+
+      if (progressError) {
+        console.error('Error fetching progress:', progressError);
+      }
 
       setProgress(progressData || []);
 
       // Check for certificate
-      const { data: certData } = await supabase
+      const { data: certData, error: certError } = await supabase
         .from('certificates')
         .select('*')
         .eq('user_id', user?.id)
         .eq('course_id', id)
         .maybeSingle();
 
+      if (certError) {
+        console.error('Error fetching certificate:', certError);
+      }
+
       setCertificate(certData);
+
+      console.log('Course data loaded successfully');
     } catch (error) {
       console.error('Error fetching course data:', error);
       toast({
@@ -86,21 +128,39 @@ const CourseViewer = () => {
   };
 
   const markLessonComplete = async (lessonId: string) => {
+    if (!lessonId || !user?.id) {
+      console.error('Missing lesson ID or user ID');
+      return;
+    }
+
     try {
+      console.log('Marking lesson complete:', lessonId);
+
       const { error } = await supabase
         .from('lesson_progress')
         .upsert({
-          user_id: user?.id,
-          lesson_id: lessonId
+          user_id: user.id,
+          lesson_id: lessonId,
+          completed_at: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error marking lesson complete:', error);
+        throw error;
+      }
 
-      setProgress([...progress, { lesson_id: lessonId }]);
+      // Update local state
+      setProgress(prev => {
+        const exists = prev.some(p => p.lesson_id === lessonId);
+        if (!exists) {
+          return [...prev, { lesson_id: lessonId }];
+        }
+        return prev;
+      });
 
       // Check if all lessons are complete
-      const completedCount = progress.length + 1;
-      if (completedCount === lessons.length && !certificate) {
+      const newCompletedCount = progress.length + 1;
+      if (newCompletedCount === lessons.length && !certificate) {
         await generateCertificate();
       }
 
@@ -120,17 +180,23 @@ const CourseViewer = () => {
 
   const generateCertificate = async () => {
     try {
+      console.log('Generating certificate for course:', id);
+
       const { data, error } = await supabase
         .from('certificates')
         .insert({
           user_id: user?.id,
           course_id: id,
-          certificate_url: `${window.location.origin}/certificate/${id}/${user?.id}`
+          certificate_url: `${window.location.origin}/certificate/${id}/${user?.id}`,
+          issued_at: new Date().toISOString()
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error generating certificate:', error);
+        throw error;
+      }
 
       setCertificate(data);
       toast({
@@ -139,6 +205,11 @@ const CourseViewer = () => {
       });
     } catch (error) {
       console.error('Error generating certificate:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate certificate",
+        variant: "destructive"
+      });
     }
   };
 
@@ -161,11 +232,46 @@ const CourseViewer = () => {
     );
   }
 
+  if (!course) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
+        <Navbar />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">Course not found</h2>
+            <Button onClick={() => navigate('/my-courses')}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to My Courses
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
       <Navbar />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Back Button */}
+        <div className="mb-6">
+          <Button 
+            onClick={() => navigate('/my-courses')}
+            variant="outline"
+            className="border-purple-200 text-purple-600 hover:bg-purple-50"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to My Courses
+          </Button>
+        </div>
+
+        {/* Course Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">{course.title}</h1>
+          <p className="text-gray-600">{course.description}</p>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Video Player */}
           <div className="lg:col-span-3">
@@ -176,18 +282,26 @@ const CourseViewer = () => {
                     src={currentLesson.video_url}
                     controls
                     className="w-full h-96 rounded-t-lg"
+                    key={currentLesson.id}
                   />
                 ) : (
                   <div className="w-full h-96 bg-gray-200 rounded-t-lg flex items-center justify-center">
-                    <p className="text-gray-500">No video available</p>
+                    <div className="text-center">
+                      <Play className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-500">
+                        {currentLesson ? 'No video available for this lesson' : 'Select a lesson to start watching'}
+                      </p>
+                    </div>
                   </div>
                 )}
                 <div className="p-6">
-                  <h2 className="text-2xl font-bold mb-4">{currentLesson?.title}</h2>
+                  <h2 className="text-2xl font-bold mb-4">
+                    {currentLesson?.title || 'Select a lesson'}
+                  </h2>
                   <div className="flex gap-4">
-                    {!isLessonComplete(currentLesson?.id) && (
+                    {currentLesson && !isLessonComplete(currentLesson.id) && (
                       <Button 
-                        onClick={() => markLessonComplete(currentLesson?.id)}
+                        onClick={() => markLessonComplete(currentLesson.id)}
                         className="bg-green-600 hover:bg-green-700"
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
@@ -234,37 +348,42 @@ const CourseViewer = () => {
             {/* Lessons List */}
             <Card className="bg-white shadow-lg border-0">
               <CardHeader>
-                <CardTitle>Lessons</CardTitle>
+                <CardTitle>Lessons ({lessons.length})</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {lessons.map((lesson, index) => (
-                    <div
-                      key={lesson.id}
-                      className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                        currentLesson?.id === lesson.id 
-                          ? 'bg-purple-100 border-purple-300' 
-                          : 'bg-gray-50 hover:bg-gray-100'
-                      }`}
-                      onClick={() => setCurrentLesson(lesson)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {isLessonComplete(lesson.id) ? (
-                            <CheckCircle className="w-5 h-5 text-green-600" />
-                          ) : (
-                            <Play className="w-5 h-5 text-gray-400" />
-                          )}
-                          <div>
-                            <p className="font-medium text-sm">{lesson.title}</p>
-                            <p className="text-xs text-gray-500">
-                              {Math.floor(lesson.duration / 60)} min
-                            </p>
+                  {lessons.length > 0 ? (
+                    lessons.map((lesson, index) => (
+                      <div
+                        key={lesson.id}
+                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                          currentLesson?.id === lesson.id 
+                            ? 'bg-purple-100 border-purple-300 border' 
+                            : 'bg-gray-50 hover:bg-gray-100'
+                        }`}
+                        onClick={() => setCurrentLesson(lesson)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {isLessonComplete(lesson.id) ? (
+                              <CheckCircle className="w-5 h-5 text-green-600" />
+                            ) : (
+                              <Play className="w-5 h-5 text-gray-400" />
+                            )}
+                            <div>
+                              <p className="font-medium text-sm">{lesson.title}</p>
+                              <p className="text-xs text-gray-500">
+                                Lesson {index + 1}
+                                {lesson.duration && ` • ${Math.floor(lesson.duration / 60)} min`}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">No lessons available</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

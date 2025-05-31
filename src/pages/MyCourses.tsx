@@ -24,58 +24,117 @@ const MyCourses = () => {
 
   const fetchEnrolledCourses = async () => {
     try {
-      const { data, error } = await supabase
+      console.log('Fetching enrolled courses for user:', user?.id);
+
+      // First get enrollments
+      const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select(`
-          *,
-          courses (
-            *,
-            profiles!instructor_id(full_name),
-            lessons(id),
-            certificates(id, certificate_url)
-          )
-        `)
+        .select('*')
         .eq('user_id', user?.id)
         .order('enrolled_at', { ascending: false });
 
-      if (error) throw error;
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError);
+        throw enrollmentsError;
+      }
 
-      // Get progress for each course
-      const coursesWithProgress = await Promise.all(
-        (data || []).map(async (enrollment) => {
-          const courseId = enrollment.courses.id;
-          
-          // Get total lessons count
-          const { data: lessonsData } = await supabase
-            .from('lessons')
-            .select('id')
-            .eq('course_id', courseId);
+      if (!enrollments || enrollments.length === 0) {
+        console.log('No enrollments found');
+        setEnrolledCourses([]);
+        setLoading(false);
+        return;
+      }
 
-          // Get completed lessons count
-          const { data: progressData } = await supabase
-            .from('lesson_progress')
-            .select('lesson_id')
-            .eq('user_id', user?.id)
-            .in('lesson_id', lessonsData?.map(l => l.id) || []);
+      console.log('Enrollments found:', enrollments);
 
-          const totalLessons = lessonsData?.length || 0;
-          const completedLessons = progressData?.length || 0;
-          const progress = totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0;
+      // Get course details for each enrollment
+      const courseIds = enrollments.map(e => e.course_id);
+      const { data: courses, error: coursesError } = await supabase
+        .from('courses')
+        .select('*')
+        .in('id', courseIds);
 
-          return {
-            ...enrollment,
-            progress: Math.round(progress),
-            totalLessons,
-            completedLessons,
-            isCompleted: progress === 100,
-            hasCertificate: enrollment.courses.certificates?.length > 0
-          };
-        })
-      );
+      if (coursesError) {
+        console.error('Error fetching courses:', coursesError);
+        throw coursesError;
+      }
 
-      setEnrolledCourses(coursesWithProgress);
+      // Get instructor profiles
+      const instructorIds = [...new Set(courses?.map(c => c.instructor_id) || [])];
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', instructorIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        // Continue without instructor names if profiles fetch fails
+      }
+
+      // Get lessons for progress calculation
+      const { data: lessons, error: lessonsError } = await supabase
+        .from('lessons')
+        .select('id, course_id')
+        .in('course_id', courseIds);
+
+      if (lessonsError) {
+        console.error('Error fetching lessons:', lessonsError);
+      }
+
+      // Get user's lesson progress
+      const lessonIds = lessons?.map(l => l.id) || [];
+      const { data: progress, error: progressError } = await supabase
+        .from('lesson_progress')
+        .select('lesson_id')
+        .eq('user_id', user?.id)
+        .in('lesson_id', lessonIds);
+
+      if (progressError) {
+        console.error('Error fetching progress:', progressError);
+      }
+
+      // Get certificates
+      const { data: certificates, error: certificatesError } = await supabase
+        .from('certificates')
+        .select('*')
+        .eq('user_id', user?.id)
+        .in('course_id', courseIds);
+
+      if (certificatesError) {
+        console.error('Error fetching certificates:', certificatesError);
+      }
+
+      // Combine all data
+      const coursesWithDetails = enrollments.map(enrollment => {
+        const course = courses?.find(c => c.id === enrollment.course_id);
+        const instructor = profiles?.find(p => p.id === course?.instructor_id);
+        const courseLessons = lessons?.filter(l => l.course_id === enrollment.course_id) || [];
+        const completedLessons = progress?.filter(p => 
+          courseLessons.some(l => l.id === p.lesson_id)
+        ) || [];
+        const certificate = certificates?.find(c => c.course_id === enrollment.course_id);
+
+        const totalLessons = courseLessons.length;
+        const completedCount = completedLessons.length;
+        const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+        return {
+          ...enrollment,
+          course: course || {},
+          instructor_name: instructor?.full_name || 'Unknown Instructor',
+          totalLessons,
+          completedLessons: completedCount,
+          progress: progressPercentage,
+          isCompleted: progressPercentage === 100,
+          hasCertificate: !!certificate,
+          certificate
+        };
+      });
+
+      console.log('Final courses with details:', coursesWithDetails);
+      setEnrolledCourses(coursesWithDetails);
     } catch (error) {
-      console.error('Error fetching enrolled courses:', error);
+      console.error('Error in fetchEnrolledCourses:', error);
       toast({
         title: "Error",
         description: "Failed to fetch your courses",
@@ -173,7 +232,7 @@ const MyCourses = () => {
         {/* Courses List */}
         <div className="space-y-6">
           {enrolledCourses.map((enrollment, index) => {
-            const course = enrollment.courses;
+            const course = enrollment.course;
             return (
               <Card 
                 key={enrollment.id} 
@@ -185,14 +244,14 @@ const MyCourses = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <CardTitle className="text-xl font-bold text-gray-800">
-                          {course.title}
+                          {course.title || 'Untitled Course'}
                         </CardTitle>
                         <Badge className={getStatusColor(enrollment.isCompleted)}>
                           {enrollment.isCompleted ? 'Completed' : 'In Progress'}
                         </Badge>
                       </div>
                       <CardDescription className="text-gray-600">
-                        Instructor: {course.profiles?.full_name || 'Unknown'} • {course.category || 'General'}
+                        Instructor: {enrollment.instructor_name} • {course.category || 'General'}
                       </CardDescription>
                     </div>
                     <div className="flex gap-3">
