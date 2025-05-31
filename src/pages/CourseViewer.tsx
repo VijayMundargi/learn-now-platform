@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -159,13 +158,22 @@ const CourseViewer = () => {
         return prev;
       });
 
-      // Check if all lessons are complete
+      // Check if all lessons with videos are complete
+      const lessonsWithVideos = lessons.filter(lesson => lesson.video_url && lesson.video_url.trim() !== '');
       const newProgress = [...progress];
       if (!newProgress.some(p => p.lesson_id === lessonId)) {
         newProgress.push({ lesson_id: lessonId });
       }
       
-      if (newProgress.length === lessons.length && !certificate) {
+      // Only generate certificate if all lessons with videos are completed
+      const completedLessonsWithVideos = newProgress.filter(p => {
+        const lesson = lessons.find(l => l.id === p.lesson_id);
+        return lesson && lesson.video_url && lesson.video_url.trim() !== '';
+      });
+      
+      if (completedLessonsWithVideos.length === lessonsWithVideos.length && 
+          lessonsWithVideos.length > 0 && 
+          !certificate) {
         await generateCertificate();
       }
 
@@ -206,7 +214,7 @@ const CourseViewer = () => {
       setCertificate(data);
       toast({
         title: "Congratulations!",
-        description: "You've completed the course and earned a certificate!"
+        description: "You've completed all videos and earned a certificate!"
       });
     } catch (error) {
       console.error('Error generating certificate:', error);
@@ -223,7 +231,15 @@ const CourseViewer = () => {
   };
 
   const getProgressPercentage = () => {
-    return lessons.length > 0 ? (progress.length / lessons.length) * 100 : 0;
+    const lessonsWithVideos = lessons.filter(lesson => lesson.video_url && lesson.video_url.trim() !== '');
+    if (lessonsWithVideos.length === 0) return 0;
+    
+    const completedLessonsWithVideos = progress.filter(p => {
+      const lesson = lessons.find(l => l.id === p.lesson_id);
+      return lesson && lesson.video_url && lesson.video_url.trim() !== '';
+    });
+    
+    return (completedLessonsWithVideos.length / lessonsWithVideos.length) * 100;
   };
 
   if (loading) {
@@ -275,6 +291,9 @@ const CourseViewer = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">{course.title}</h1>
           <p className="text-gray-600">{course.description}</p>
+          {course.author_name && (
+            <p className="text-purple-600 font-medium mt-2">By {course.author_name}</p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -358,7 +377,10 @@ const CourseViewer = () => {
                 <div className="space-y-4">
                   <Progress value={getProgressPercentage()} className="h-2" />
                   <p className="text-sm text-gray-600">
-                    {progress.length} of {lessons.length} lessons completed
+                    {progress.filter(p => {
+                      const lesson = lessons.find(l => l.id === p.lesson_id);
+                      return lesson && lesson.video_url && lesson.video_url.trim() !== '';
+                    }).length} of {lessons.filter(lesson => lesson.video_url && lesson.video_url.trim() !== '').length} videos completed
                   </p>
                   {certificate && (
                     <Badge className="bg-green-100 text-green-700">
@@ -399,7 +421,7 @@ const CourseViewer = () => {
                               <p className="text-xs text-gray-500">
                                 Lesson {index + 1}
                                 {lesson.duration && ` • ${Math.floor(lesson.duration / 60)} min`}
-                                {lesson.video_url && ` • Video available`}
+                                {lesson.video_url && lesson.video_url.trim() !== '' && ` • Video available`}
                               </p>
                             </div>
                           </div>
