@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-import { Clock, User, Star, Play, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Clock, User, Star, Play, CheckCircle, ArrowLeft, Users } from 'lucide-react';
 
 const CourseDetail = () => {
   const { id } = useParams();
@@ -18,6 +18,7 @@ const CourseDetail = () => {
   const [lessons, setLessons] = useState<any[]>([]);
   const [instructor, setInstructor] = useState<any>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [enrollmentCount, setEnrollmentCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
 
@@ -83,6 +84,18 @@ const CourseDetail = () => {
       console.log('Lessons data:', lessonsData);
       setLessons(lessonsData || []);
 
+      // Get enrollment count
+      const { count: enrollmentCountData, error: enrollmentCountError } = await supabase
+        .from('enrollments')
+        .select('*', { count: 'exact' })
+        .eq('course_id', id);
+
+      if (enrollmentCountError) {
+        console.error('Error fetching enrollment count:', enrollmentCountError);
+      } else {
+        setEnrollmentCount(enrollmentCountData || 0);
+      }
+
       // Check if user is enrolled (if logged in)
       if (user) {
         const { data: enrollmentData, error: enrollmentError } = await supabase
@@ -146,6 +159,7 @@ const CourseDetail = () => {
       }
 
       setIsEnrolled(true);
+      setEnrollmentCount(prev => prev + 1);
       toast({
         title: "Enrollment Successful!",
         description: `You have successfully enrolled in "${course?.title}". Start learning now!`,
@@ -256,7 +270,7 @@ const CourseDetail = () => {
                     <div className="flex items-center">
                       <User className="w-4 h-4 mr-2" />
                       <span className="font-medium">
-                        {instructor?.full_name || 'Unknown Instructor'}
+                        {course.author_name || instructor?.full_name || 'Unknown Instructor'}
                       </span>
                     </div>
                     
@@ -268,6 +282,11 @@ const CourseDetail = () => {
                     <div className="flex items-center">
                       <Play className="w-4 h-4 mr-2" />
                       <span>{lessons.length} lessons</span>
+                    </div>
+
+                    <div className="flex items-center">
+                      <Users className="w-4 h-4 mr-2" />
+                      <span>{enrollmentCount} students enrolled</span>
                     </div>
                   </div>
                 </div>
@@ -399,6 +418,10 @@ const CourseDetail = () => {
                     <span className="font-medium">{course.level || 'Beginner'}</span>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Students Enrolled:</span>
+                    <span className="font-medium">{enrollmentCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-gray-600">Certificate:</span>
                     <span className="font-medium">Yes</span>
                   </div>
@@ -416,11 +439,11 @@ const CourseDetail = () => {
                   <div className="text-center">
                     <div className="w-16 h-16 bg-purple-600 rounded-full mx-auto mb-3 flex items-center justify-center">
                       <span className="text-white text-xl font-bold">
-                        {instructor.full_name?.charAt(0) || 'I'}
+                        {(course.author_name || instructor.full_name)?.charAt(0) || 'I'}
                       </span>
                     </div>
                     <h4 className="font-semibold text-gray-800 mb-1">
-                      {instructor.full_name || 'Unknown Instructor'}
+                      {course.author_name || instructor.full_name || 'Unknown Instructor'}
                     </h4>
                     <p className="text-sm text-gray-600 capitalize">
                       {instructor.role || 'Instructor'}
