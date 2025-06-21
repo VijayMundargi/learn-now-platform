@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -13,7 +12,7 @@ import { Clock, User, Star, Play, CheckCircle, ArrowLeft, Users } from 'lucide-r
 const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [instructor, setInstructor] = useState<any>(null);
@@ -132,6 +131,16 @@ const CourseDetail = () => {
         variant: "destructive"
       });
       navigate('/login');
+      return;
+    }
+
+    // Check if user is a teacher
+    if (userProfile?.role === 'teacher') {
+      toast({
+        title: "Access Restricted",
+        description: "Teachers cannot enroll in courses. Only students can enroll.",
+        variant: "destructive"
+      });
       return;
     }
 
@@ -392,18 +401,36 @@ const CourseDetail = () => {
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleEnroll}
-                  disabled={enrolling}
-                  className={`w-full mb-4 ${
-                    isEnrolled 
-                      ? 'bg-green-600 hover:bg-green-700' 
-                      : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
-                  }`}
-                >
-                  {enrolling ? 'Enrolling...' : isEnrolled ? 'Continue Learning' : 'Enroll Now'}
-                </Button>
+                {/* Show different content based on user role */}
+                {userProfile?.role === 'teacher' ? (
+                  <div className="text-center">
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                      <p className="text-sm text-yellow-800">
+                        Teachers cannot enroll in courses. Only students can access course content.
+                      </p>
+                    </div>
+                    <Button
+                      disabled
+                      className="w-full mb-4 bg-gray-400 cursor-not-allowed"
+                    >
+                      Enrollment Restricted
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    onClick={handleEnroll}
+                    disabled={enrolling}
+                    className={`w-full mb-4 ${
+                      isEnrolled 
+                        ? 'bg-green-600 hover:bg-green-700' 
+                        : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                    }`}
+                  >
+                    {enrolling ? 'Enrolling...' : isEnrolled ? 'Continue Learning' : 'Enroll Now'}
+                  </Button>
+                )}
 
+                {/* Course Details */}
                 <div className="space-y-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600">Total Duration:</span>

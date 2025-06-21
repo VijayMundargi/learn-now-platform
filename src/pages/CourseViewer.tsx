@@ -13,7 +13,7 @@ import { Play, CheckCircle, Download, ArrowLeft } from 'lucide-react';
 const CourseViewer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [currentLesson, setCurrentLesson] = useState<any>(null);
@@ -23,9 +23,19 @@ const CourseViewer = () => {
 
   useEffect(() => {
     if (id && user) {
+      // Check if user is a student before fetching course data
+      if (userProfile?.role === 'teacher') {
+        toast({
+          title: "Access Denied",
+          description: "Teachers cannot access course content. Only students can view courses.",
+          variant: "destructive"
+        });
+        navigate('/dashboard');
+        return;
+      }
       fetchCourseData();
     }
-  }, [id, user]);
+  }, [id, user, userProfile]);
 
   const fetchCourseData = async () => {
     try {
@@ -192,6 +202,12 @@ const CourseViewer = () => {
   };
 
   const generateCertificate = async () => {
+    // Only generate certificates for students
+    if (userProfile?.role !== 'student') {
+      console.log('Certificate generation restricted to students only');
+      return;
+    }
+
     try {
       console.log('Generating certificate for course:', id);
 
@@ -382,7 +398,7 @@ const CourseViewer = () => {
                       return lesson && lesson.video_url && lesson.video_url.trim() !== '';
                     }).length} of {lessons.filter(lesson => lesson.video_url && lesson.video_url.trim() !== '').length} videos completed
                   </p>
-                  {certificate && (
+                  {certificate && userProfile?.role === 'student' && (
                     <Badge className="bg-green-100 text-green-700">
                       Course Completed! 🎉
                     </Badge>
