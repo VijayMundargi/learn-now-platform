@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -134,6 +135,10 @@ const TeacherDashboard = () => {
         variant: "destructive"
       });
     }
+  };
+
+  const handleViewCourse = (courseId: string) => {
+    navigate(`/course/${courseId}`);
   };
 
   if (loading) {
@@ -277,13 +282,23 @@ const TeacherDashboard = () => {
                           <Users className="w-4 h-4 mr-1" />
                           {course.enrollments?.[0]?.count || 0} students
                         </div>
-                        <Button
-                          size="sm"
-                          variant={course.is_published ? "outline" : "default"}
-                          onClick={() => handleTogglePublish(course.id, course.is_published)}
-                        >
-                          {course.is_published ? 'Unpublish' : 'Publish'}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewCourse(course.id)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            View
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={course.is_published ? "outline" : "default"}
+                            onClick={() => handleTogglePublish(course.id, course.is_published)}
+                          >
+                            {course.is_published ? 'Unpublish' : 'Publish'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
